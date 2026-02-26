@@ -11,3 +11,4 @@ tests: tests.c mymalloc.c mymalloc.h
 
 clean:
 	rm -f memgrind tests
+	rm -rf *.dSYM
