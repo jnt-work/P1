@@ -17,10 +17,9 @@ static int is_initialized = 0;
 
 // Metadata header for every chunk
 struct header {
-    size_t size;   // Total size of chunk (header + payload)
+    int size;           // Total size of chunk (header + payload)
     int is_allocated;   // 1 if allocated, 0 if free
-    int padding;    // Padding to ensure 16-byte alignment
-};
+};  // 8 bytes
 
 void leak_detector() {
     // Iterate through heap
@@ -37,7 +36,7 @@ void leak_detector() {
 
         if (curh->is_allocated == 1) {
             leaked_objects_count++;
-            total_leaked_bytes += (curh->size = sizeof(struct header)); // Add only payload size
+            total_leaked_bytes += (curh->size - sizeof(struct header)); // Add only payload size
         }
         current += curh->size;
     }

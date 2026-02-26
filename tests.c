@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 #ifndef REALMALLOC
 #include "mymalloc.h"
@@ -194,8 +196,70 @@ static void test_leak(void) {
     pass(name);
 }
 
-int
+/* ------------------------------------------------------------------ */
+/* Helper: run a function in a child process, check it exits with 2   */
+/* ------------------------------------------------------------------ */
+static void expect_exit2(const char *name, void (*fn)(void)) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        fail(name, "fork() failed");
+        return;
+    }
+    if (pid == 0) {
+        /* child: close stdout and stderr so output doesn't clutter parent */
+        close(STDOUT_FILENO);
+        close(STDERR_FILENO);
+        fn();
+        /* if fn() returns, it didn't call exit — that's a failure */
+        _exit(0);
+    }
+    /* parent */
+    int status;
+    waitpid(pid, &status, 0);
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 2)
+        pass(name);
+    else
+        fail(name, "expected exit(2) but got different exit status");
+}
 
+/* ------------------------------------------------------------------ */
+/* Test 6: free() detects non-heap pointer                             */
+/* ------------------------------------------------------------------ */
+static void do_free_nonheap(void) {
+    int x = 42;
+    free(&x);
+}
+
+static void test_free_nonheap(void) {
+    expect_exit2("free() detects non-heap pointer", do_free_nonheap);
+}
+
+/* ------------------------------------------------------------------ */
+/* Test 7: free() detects interior pointer                             */
+/* ------------------------------------------------------------------ */
+static void do_free_interior(void) {
+    char *p = malloc(100);
+    free(p + 10);
+}
+
+static void test_free_interior(void) {
+    expect_exit2("free() detects interior pointer", do_free_interior);
+}
+
+/* ------------------------------------------------------------------ */
+/* Test 8: free() detects double free                                  */
+/* ------------------------------------------------------------------ */
+static void do_free_doublefree(void) {
+    char *p = malloc(100);
+    free(p);
+    free(p);
+}
+
+static void test_free_doublefree(void) {
+    expect_exit2("free() detects double free", do_free_doublefree);
+}
+
+int
 main(void)
 {
     printf("<---------------- mymalloc Correctness Tests ---------------->\n");
@@ -204,13 +268,15 @@ main(void)
     test_free_works();
     test_coalesce();
     test_null_on_full();
-    test_leak();  
+    test_leak();
+
+    printf("<---------------- Error Detection Tests ---------------->\n");
+
+    test_free_nonheap();
+    test_free_interior();
+    test_free_doublefree();
 
     printf("<---------------- Results: %d passed, %d failed ---------------->\n", total_pass, total_fail);
-    printf("\nReminder: run error detection tests manually:\n");
-    printf("  ./test_err_nonheap    (expect: error msg + exit code 2)\n");
-    printf("  ./test_err_interior   (expect: error msg + exit code 2)\n");
-    printf("  ./test_err_doublefree (expect: error msg + exit code 2)\n");
 
     return total_fail ? EXIT_FAILURE : EXIT_SUCCESS;
 }
